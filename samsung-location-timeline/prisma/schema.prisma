@@ -1,0 +1,174 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Provider {
+  samsung
+  mock
+}
+
+enum MovementState {
+  MOVING
+  STOPPED
+  UNKNOWN
+  STALE
+  OFFLINE
+}
+
+enum TripStatus {
+  ACTIVE
+  COMPLETED
+  DISCARDED
+}
+
+enum EventSeverity {
+  INFO
+  WARNING
+  ERROR
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  devices   Device[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Device {
+  id               String          @id @default(cuid())
+  userId           String
+  user             User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider         Provider
+  providerDeviceId String
+  deviceName       String
+  model             String?
+  enabled           Boolean         @default(true)
+  capabilities      Json?
+  locationSupported Boolean         @default(false)
+  lastAddress       String?
+  providerStatus    String?
+  lastSyncedAt      DateTime?
+  lastSeenAt        DateTime?
+  movementState     MovementState    @default(UNKNOWN)
+  points            LocationPoint[]
+  stops             Stop[]
+  trips             Trip[]
+  places            GeocodedPlace[]
+  findSnapshots     SamsungFindSnapshot[]
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  @@unique([provider, providerDeviceId])
+  @@index([userId])
+}
+
+model SamsungFindSnapshot {
+  id             String   @id @default(cuid())
+  deviceId       String
+  device         Device   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  address        String?
+  providerStatus String
+  capturedAt     DateTime
+  createdAt      DateTime @default(now())
+
+  @@index([deviceId, capturedAt])
+  @@index([capturedAt])
+}
+
+model LocationPoint {
+  id                   String        @id @default(cuid())
+  deviceId             String
+  device               Device        @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  latitude             Decimal       @db.Decimal(10, 7)
+  longitude            Decimal       @db.Decimal(10, 7)
+  accuracy             Float?
+  providerTimestamp    DateTime?
+  collectedAt          DateTime
+  source               Provider
+  state                MovementState @default(UNKNOWN)
+  speedEstimate        Float?
+  distanceFromPrevious Float?
+  rawStatus            String?
+  createdAt            DateTime      @default(now())
+
+  @@index([deviceId])
+  @@index([providerTimestamp])
+  @@index([collectedAt])
+  @@index([deviceId, collectedAt])
+  @@unique([deviceId, providerTimestamp, latitude, longitude])
+}
+
+model Stop {
+  id              String   @id @default(cuid())
+  deviceId        String
+  device          Device   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  latitude        Decimal  @db.Decimal(10, 7)
+  longitude       Decimal  @db.Decimal(10, 7)
+  startedAt       DateTime
+  endedAt         DateTime?
+  durationSeconds Int
+  radiusMeters    Float
+  address         String?
+  placeName       String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([deviceId, startedAt])
+}
+
+model Trip {
+  id                           String     @id @default(cuid())
+  deviceId                     String
+  device                       Device     @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  startedAt                    DateTime
+  endedAt                      DateTime?
+  startLatitude                Decimal    @db.Decimal(10, 7)
+  startLongitude               Decimal    @db.Decimal(10, 7)
+  endLatitude                  Decimal?   @db.Decimal(10, 7)
+  endLongitude                 Decimal?   @db.Decimal(10, 7)
+  distanceMeters               Float      @default(0)
+  durationSeconds              Int        @default(0)
+  estimatedRouteDistanceMeters Float?
+  status                       TripStatus @default(ACTIVE)
+  createdAt                    DateTime   @default(now())
+  updatedAt                    DateTime   @updatedAt
+
+  @@index([deviceId, startedAt])
+}
+
+model GeocodedPlace {
+  id           String   @id @default(cuid())
+  deviceId     String
+  device       Device   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  latitudeKey  Decimal  @db.Decimal(8, 4)
+  longitudeKey Decimal  @db.Decimal(8, 4)
+  latitude     Decimal  @db.Decimal(10, 7)
+  longitude    Decimal  @db.Decimal(10, 7)
+  name         String?
+  address      String?
+  visitCount   Int      @default(1)
+  lastVisitedAt DateTime
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([deviceId, latitudeKey, longitudeKey])
+}
+
+model SystemEvent {
+  id        String        @id @default(cuid())
+  type      String
+  severity  EventSeverity @default(INFO)
+  message   String
+  metadata  Json?
+  createdAt DateTime      @default(now())
+
+  @@index([type, createdAt])
+  @@index([createdAt])
+}

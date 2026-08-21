@@ -1,0 +1,73 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: timeline
+      POSTGRES_USER: timeline
+      POSTGRES_PASSWORD: timeline
+    volumes:
+      - timeline-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U timeline -d timeline"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile.collector
+    env_file: .env
+    depends_on:
+      postgres: { condition: service_healthy }
+    command: ["sh", "-c", "npx prisma migrate deploy && npm run db:seed"]
+    restart: "no"
+  web:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      APP_URL: http://localhost:3001
+      CAMERA_GATEWAY_URL: http://camera-gateway:1984
+    ports: ["127.0.0.1:3001:3000"]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      samsung-browser: { condition: service_healthy }
+      camera-gateway: { condition: service_started }
+  camera-gateway:
+    image: alexxit/go2rtc:1.9.13
+    restart: unless-stopped
+    environment:
+      TZ: Asia/Kolkata
+  samsung-browser:
+    image: selenium/standalone-chromium:latest
+    restart: unless-stopped
+    shm_size: 2gb
+    environment:
+      TZ: Asia/Kolkata
+      SE_VNC_NO_PASSWORD: "true"
+      SE_NODE_MAX_SESSIONS: "1"
+      SE_NODE_OVERRIDE_MAX_SESSIONS: "true"
+      SE_NODE_SESSION_TIMEOUT: "86400"
+      SE_SCREEN_WIDTH: "1440"
+      SE_SCREEN_HEIGHT: "900"
+    ports:
+      - "127.0.0.1:7900:7900"
+    volumes:
+      - samsung-browser-config:/home/seluser/.config
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:4444/status"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+  collector:
+    build:
+      context: .
+      dockerfile: Dockerfile.collector
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+volumes:
+  timeline-data:
+  samsung-browser-config:
